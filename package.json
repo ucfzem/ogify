@@ -7,7 +7,6 @@
     "deploy": "vercel deploy --prod"
   },
   "dependencies": {
-    "satori": "^0.12.0",
-    "@resvg/resvg-wasm": "^2.6.2"
+    "@vercel/og": "^0.6.4"
   }
 }
