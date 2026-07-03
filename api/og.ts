@@ -19,42 +19,58 @@ export default async function handler(req: Request): Promise<Response> {
 
   const title = url.searchParams.get('title')
   if (!title) {
-    return new Response(JSON.stringify({ error: 'Missing title' }), {
+    return new Response(JSON.stringify({ error: 'Missing title param' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
     })
   }
 
-  const format = url.searchParams.get('format') || 'png'
-  const fonts = await getFonts()
+  try {
+    const fonts = await getFonts()
+    const svg = await satori(
+      template({
+        title,
+        bg: url.searchParams.get('bg') || undefined,
+        logo: url.searchParams.get('logo') || undefined,
+      }),
+      { width: 1200, height: 630, fonts },
+    )
 
-  const svg = await satori(template({ title, bg: url.searchParams.get('bg') || undefined, logo: url.searchParams.get('logo') || undefined }), {
-    width: 1200,
-    height: 630,
-    fonts,
-  })
+    const format = url.searchParams.get('format') || 'svg'
 
-  if (format === 'svg') {
-    return new Response(svg, {
+    if (format === 'svg') {
+      return new Response(svg, {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/svg+xml',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+          'Access-Control-Allow-Origin': '*',
+        },
+      })
+    }
+
+    // PNG path — lazy init WASM
+    if (!wasmReady) wasmReady = initWasm(fetch(WASM_URL))
+    await wasmReady
+
+    const resvg = new Resvg(svg, {
+      fitTo: { mode: 'width', value: 1200 },
+      background: url.searchParams.get('bg') || '#0d0d0d',
+    })
+    const blob = new Blob([resvg.render().asPng() as unknown as BlobPart], { type: 'image/png' })
+
+    return new Response(blob, {
+      status: 200,
       headers: {
-        'Content-Type': 'image/svg+xml',
+        'Content-Type': 'image/png',
         'Cache-Control': 'public, max-age=31536000, immutable',
         'Access-Control-Allow-Origin': '*',
       },
     })
+  } catch (err) {
+    return new Response(JSON.stringify({ error: String(err) }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
-
-  if (!wasmReady) wasmReady = initWasm(fetch(WASM_URL))
-  await wasmReady
-
-  const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: 1200 }, background: url.searchParams.get('bg') || '#0d0d0d' })
-  const blob = new Blob([resvg.render().asPng() as unknown as BlobPart], { type: 'image/png' })
-
-  return new Response(blob, {
-    headers: {
-      'Content-Type': 'image/png',
-      'Cache-Control': 'public, max-age=31536000, immutable',
-      'Access-Control-Allow-Origin': '*',
-    },
-  })
 }
